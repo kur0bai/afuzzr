@@ -1,0 +1,15 @@
+api
+api/v1
+api/v2
+admin
+login
+logout
+register
+profile
+users
+config
+settings
+dashboard
+search
+upload
+backup
