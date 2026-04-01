@@ -1,3 +1,4 @@
+import argparse
 import yaml
 import json
 import re
@@ -8,27 +9,70 @@ from reporter import Reporter
 
 init(autoreset=True)
 
+
+def show_banner():
+    """
+    Main identifier banner
+    """  
+    banner = [
+        (Fore.GREEN + r"       __                    " ),
+        (Fore.GREEN + r"      / _|                   " ),
+        (Fore.GREEN + r"  __ _| |_ _   _ _________ __ " ),
+        (Fore.GREEN + r" / _` |  _| | | |_  /_  / '__|" ),
+        (Fore.CYAN + r"| (_| | | | |_| |/ / / /| |   " ),
+        (Fore.CYAN + r" \__,_|_|  \__,_/___/___|_|   " ),
+        (Fore.CYAN + r""),
+        (Fore.CYAN + r"Author: kur0bai"),
+        (Fore.YELLOW + r"Visit: https://github.com/kur0bai"),
+        Style.RESET_ALL
+    ]
+
+    for line in banner:
+        print(line)
+
+
+
 def load_openapi_spec(file_path: str) -> dict:
+    """
+    Just open the path of specs if specified
+    """
     with open(file_path, 'r') as f:
         if file_path.endswith('.yaml') or file_path.endswith('.yml'):
             return yaml.safe_load(f)
         return json.load(f)
 
-def main():
-    spec_path = 'examples/petstore_openapi.json'
-    base_url = "https://petstore.swagger.io/v2"
+def get_args():
+    parser = argparse.ArgumentParser(description="Easy way to fuzz APIs")
+    parser.add_argument("--url", type=str,
+                        required=True,
+                        help="The Target URL to fuzz")
+    parser.add_argument("--specs", type=str, 
+                        required=False, 
+                        help="The openapi.json file (Optional)")
+    parser.add_argument("--mode", choices=['spec', 'dict'],
+                        required=False, help="Mode")                   
+    args = parser.parse_args()
+    return args
 
-    print(f"{Fore.CYAN}[*] Loading OpenAPI specs from: {spec_path}")
-    try:
-        spec = load_openapi_spec(spec_path)
-    except FileNotFoundError:
-        print(f"{Fore.RED}[!] Error: El archivo de especificación no se encuentra en '{spec_path}'")
-        print(f"{Fore.YELLOW}[+] Descargando una API de ejemplo (Petstore)...")
-        import urllib.request
-        os.makedirs('examples', exist_ok=True)
-        urllib.request.urlretrieve("https://petstore.swagger.io/v2/swagger.json", spec_path)
-        spec = load_openapi_spec(spec_path)
-        print(f"{Fore.GREEN}[+] API de ejemplo descargada y cargada.")
+def main():
+    show_banner()
+    args = get_args()
+    base_url = args.url
+    spec_path = args.specs
+    mode = args.mode
+
+    if spec_path:
+        print(f"{Fore.CYAN}[*] Loading OpenAPI specs from: {spec_path}")
+        try:
+            spec = load_openapi_spec(spec_path)
+        except FileNotFoundError:
+            print(f"{Fore.RED}[!] Error: El archivo de especificación no se encuentra en '{spec_path}'")
+            print(f"{Fore.YELLOW}[+] Descargando una API de ejemplo (Petstore)...")
+            import urllib.request
+            os.makedirs('examples', exist_ok=True)
+            urllib.request.urlretrieve("https://petstore.swagger.io/v2/swagger.json", spec_path)
+            spec = load_openapi_spec(spec_path)
+            print(f"{Fore.GREEN}[+] API de ejemplo descargada y cargada.")
 
     client = FuzzerHttpClient(base_url)
     generator = PayloadGenerator()
