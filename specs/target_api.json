@@ -1,0 +1,112 @@
+{
+    "openapi": "3.0.0",
+    "info": {
+      "title": "API Vulnerable de Prueba",
+      "description": "Una API diseñada intencionadamente con vulnerabilidades para que el fuzzer las encuentre.",
+      "version": "1.0.0"
+    },
+    "servers": [
+      {
+        "url": "http://localhost:8080",
+        "description": "Servidor de desarrollo local"
+      }
+    ],
+    "paths": {
+      "/api/v1/users/{userId}": {
+        "get": {
+          "summary": "Obtener información de un usuario",
+          "description": "Este endpoint es vulnerable a IDOR y Path Traversal en el parámetro de la ruta.",
+          "parameters": [
+            {
+              "name": "userId",
+              "in": "path",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Operación exitosa"
+            }
+          }
+        }
+      },
+      "/api/v1/redirect": {
+        "get": {
+          "summary": "Redirige al usuario a una URL",
+          "description": "Vulnerable a Open Redirect y Server-Side Request Forgery (SSRF) en el parámetro de consulta.",
+          "parameters": [
+            {
+              "name": "url",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "302": {
+              "description": "Redirección"
+            }
+          }
+        }
+      },
+      "/api/v1/search": {
+        "get": {
+          "summary": "Busca productos",
+          "description": "Vulnerable a SQL Injection y Command Injection en el parámetro de consulta 'q'.",
+          "parameters": [
+            {
+              "name": "q",
+              "in": "query",
+              "required": true,
+              "schema": {
+                "type": "string"
+              }
+            }
+          ],
+          "responses": {
+            "200": {
+              "description": "Resultados de la búsqueda"
+            }
+          }
+        }
+      },
+      "/api/v1/profile": {
+        "post": {
+          "summary": "Actualiza el perfil de usuario",
+          "description": "Vulnerable a XSS en el campo 'bio' y a inyecciones en el campo 'avatar_url'.",
+          "requestBody": {
+            "required": true,
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bio": {
+                      "type": "string",
+                      "description": "Biografía del usuario"
+                    },
+                    "avatar_url": {
+                      "type": "string",
+                      "format": "uri",
+                      "description": "URL del avatar"
+                    }
+                  },
+                  "required": ["bio"]
+                }
+              }
+            }
+          },
+          "responses": {
+            "200": {
+              "description": "Perfil actualizado"
+            }
+          }
+        }
+      }
+    }
+  }

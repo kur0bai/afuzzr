@@ -1,0 +1,10 @@
+- name: "Potential SQL Error"
+  trigger:
+    status_code: 500
+    response_contains: ["sql syntax", "mysql_fetch", "ora-"]
+  severity: "High"
+
+- name: "Blind SQLi (Time-based)"
+  trigger:
+    response_time_gt_ms: 5000
+  severity: "Critical"
