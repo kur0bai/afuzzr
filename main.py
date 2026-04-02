@@ -66,7 +66,6 @@ def get_args():
                     help="Enable stealth mode (random delays + basic WAF evasion techniques)")
     parser.add_argument("--verbose", "-vvv", action="store_true",
                     help="Enable verbose output (shows detailed information for each request)")
-    # Recommended practical filter
     parser.add_argument("--success", action="store_true",
                     help="Show only successful responses (status codes 200 and 403). Recommended to reduce noise.")                                               
     args = parser.parse_args()

@@ -5,7 +5,7 @@ HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Fuzzer Report</title>
+    <title>afuzzr Report</title>
     <style>
         body { font-family: sans-serif; background-color: #f4f4f4; color: #333; }
         .container { max-width: 900px; margin: 2em auto; background: white; padding: 2em; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
