@@ -56,9 +56,9 @@ class FuzzerHttpClient:
         else:
             # Alternate between json and form-data 
             if self.stealth and random.random() < 0.3:
-                kwargs["data"] = payload   # form-data
+                kwargs["data"] = payload 
             else:
-                kwargs["json"] = payload   # json body
+                kwargs["json"] = payload  
 
         return kwargs
 
