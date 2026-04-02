@@ -2,9 +2,9 @@ import argparse
 import sys
 from colorama import Fore, Style, init
 from core.http_client import FuzzerHttpClient
-from payload_generator import PayloadGenerator
-from reporter import Reporter
-from fuzzer import Fuzzer
+from core.payload_generator import PayloadGenerator
+from core.reporter import Reporter
+from core.fuzzer import Fuzzer
 from utils.file import Utils
 
 init(autoreset=True)
@@ -40,23 +40,35 @@ def get_args():
     """
     Get Menu list of params
     """
-    parser = argparse.ArgumentParser(description="Easy way to fuzz APIs")
+    parser = argparse.ArgumentParser(
+    prog="api-fuzzer",
+    description=f"{Fore.CYAN}afuzzr - Simple and fast tool for discovering API endpoints{Style.RESET_ALL}",
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog=f"""
+    {Fore.YELLOW}Examples:{Style.RESET_ALL}
+    python afuzzr.py --url https://api.target.com --wordlist wordlists/api-endpoints.txt
+    python afuzzr.py --url https://api.target.com --mode spec --spec openapi.json --success
+    python afuzzr.py --url https://api.target.com --wordlist endpoints.txt --stealth -vvv
+    """
+    )
     parser.add_argument("--url", type=str,
-                        required=True,
-                        help="The Target URL to fuzz")
-    parser.add_argument("--spec", type=str, 
-                        required=False, 
-                        help="The openapi.json file (Optional)")
-    parser.add_argument("--m", choices=['spec', 'dict'],
-                        required=False, help="Mode", default="dict")
-    parser.add_argument("--w", "--wordlist", 
-                    required=False, 
-                    help="Wordlist dictionary path to FUZZ")
-    parser.add_argument("-s", "--stealth", 
-                    action="store_true", 
-                    required=False, 
-                    help="Enable stealth mode (Delay and WAF evasion)")
-    parser.add_argument("-vvv", action="store_true", required=False, help="Enabling verbose")                                                     
+                    required=True,
+                    help="Target base URL to fuzz (e.g. https://api.example.com)")
+    parser.add_argument("--spec", type=str,
+                    required=False,
+                    help="Path to OpenAPI/Swagger file (openapi.json or swagger.json). Used only with --mode spec")
+    parser.add_argument("--mode", "-m", choices=['spec', 'dict'], default="dict",
+                    help="Fuzzing mode: 'dict' (wordlist) or 'spec' (parse from OpenAPI file)")
+    parser.add_argument("--wordlist", "-w", type=str,
+                    required=False,
+                    help="Path to the wordlist/dictionary file containing endpoints to fuzz (required in 'dict' mode)")
+    parser.add_argument("--stealth", "-s", action="store_true",
+                    help="Enable stealth mode (random delays + basic WAF evasion techniques)")
+    parser.add_argument("--verbose", "-vvv", action="store_true",
+                    help="Enable verbose output (shows detailed information for each request)")
+    # Recommended practical filter
+    parser.add_argument("--success", action="store_true",
+                    help="Show only successful responses (status codes 200 and 403). Recommended to reduce noise.")                                               
     args = parser.parse_args()
     return args
 
@@ -66,10 +78,11 @@ def main():
     args = get_args()
     base_url = args.url
     spec_path = args.spec
-    mode = args.m
-    wordlist = args.w
+    mode = args.mode
+    wordlist = args.wordlist
     stealth = args.stealth
-    verbose = args.vvv
+    verbose = args.verbose
+    success = args.success
 
     try:
         print(f"{Fore.WHITE}[•] Stealth Mode {Fore.CYAN}ENABLED{Fore.WHITE}") if stealth else print(f"{Fore.WHITE}[•] Stealth Mode {Fore.YELLOW}DISABLED{Fore.WHITE}")
@@ -84,7 +97,7 @@ def main():
         utils = Utils()
 
         if mode == 'dict':
-            fuzzer.fuzz_with_dict(base_url, client, generator, reporter, wordlist, verbose)
+            fuzzer.fuzz_with_dict(base_url, client, generator, reporter, wordlist, verbose, success)
         elif mode == 'spec':
             if not spec_path:
                 print(f"{Fore.RED}[!] Error: The 'spec' mode requires the argument --spec.")
@@ -93,12 +106,11 @@ def main():
             fuzzer.fuzz_with_spec(spec, base_url, client, generator, reporter)
 
 
-        print(f"\n{Fore.GREEN}[*] Fuzzing completed.")
+        print(f"\n{Fore.GREEN}[•] Fuzzing completed.")
         reporter.save_report('fuzzer_report.html')
     except KeyboardInterrupt as ex:
         print(f"\n\n{Fore.RED}[!] Ctrl+C detected. Exiting")
         sys.exit(0)    
 
 if __name__ == "__main__":
-    import os
     main()
