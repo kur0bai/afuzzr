@@ -1,5 +1,6 @@
 import argparse
 import random
+import sys
 from time import sleep
 import yaml
 import json
@@ -42,18 +43,33 @@ def load_openapi_spec(file_path: str) -> dict:
     """
     Just open the path of specs if specified
     """
-    with open(file_path, 'r') as f:
-        if file_path.endswith('.yaml') or file_path.endswith('.yml'):
-            return yaml.safe_load(f)
-        return json.load(f)
+    try:
+        with open(file_path, 'r') as f:
+            if file_path.endswith('.yaml') or file_path.endswith('.yml'):
+                return yaml.safe_load(f)
+            return json.load(f)
+    except Exception as ex:
+        print(f"{Fore.RED}[✘]{Style.RESET_ALL} Unexpected error loading specs: {ex}")
+        sys.exit(1)        
 
 
 def load_wordlist(file_path: str) -> list:
     """
     Open wordlist based on path
     """
-    with open(file_path, 'r') as f:
-        return [line.strip() for line in f if line.strip()]        
+    try:
+        with open(file_path, 'r') as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        print(f"{Fore.RED}[✘]{Style.RESET_ALL} File not found: '{file_path}'")
+        sys.exit(1)
+    except PermissionError:
+        print(f"{Fore.RED}[✘]{Style.RESET_ALL} Permission denied: '{file_path}'")
+        sys.exit(1)
+    except Exception as ex:
+        print(f"{Fore.RED}[✘]{Style.RESET_ALL} Unexpected error loading wordlist: {ex}")
+        sys.exit(1)
+
 
 def get_args():
     """
@@ -63,11 +79,18 @@ def get_args():
     parser.add_argument("--url", type=str,
                         required=True,
                         help="The Target URL to fuzz")
-    parser.add_argument("--specs", type=str, 
+    parser.add_argument("--spec", type=str, 
                         required=False, 
                         help="The openapi.json file (Optional)")
-    parser.add_argument("--mode", choices=['spec', 'dict'],
-                        required=False, help="Mode", default="dict")                   
+    parser.add_argument("--m", choices=['spec', 'dict'],
+                        required=False, help="Mode", default="dict")
+    parser.add_argument("--w", "--wordlist", 
+                    required=False, 
+                    help="Wordlist dictionary path to FUZZ")
+    parser.add_argument("-s", "--stealth", 
+                    action="store_true", 
+                    required=False, 
+                    help="Enable stealth mode (Delay and WAF evasion)")                                     
     args = parser.parse_args()
     return args
 
@@ -134,11 +157,13 @@ def fuzz_with_spec(spec, base_url, client, generator, reporter):
 
                         status_code, _, response_text, duration_ms = client.send_request(method, path, fuzz_payload)
 
-def fuzz_with_dict(base_url, client, generator, reporter):
+def fuzz_with_dict(base_url, client, generator, reporter, wordlist=None):
 
+    # Print MODE
     print(f"{Fore.WHITE}[•] Running on {Fore.YELLOW}Dictionary{Fore.WHITE} MODE")
 
-    endpoints  = load_wordlist('wordlists/endpoints.txt')
+    # Load default parameters if not specified
+    endpoints  = load_wordlist('wordlists/endpoints.txt') if wordlist is None else  load_wordlist(wordlist)
     parameters = load_wordlist('wordlists/parameters.txt')
     methods    = ['GET', 'POST', 'PUT', 'DELETE']
 
@@ -276,7 +301,7 @@ def fuzz_with_dict(base_url, client, generator, reporter):
                             status_code, _, response_text, duration_ms = client.send_request(method, path, {})
                             total_requests += 1
 
-                            # Verbose: siempre muestra status + tiempo
+                            # Verbose
                             status_color = Fore.GREEN if status_code < 400 else (Fore.YELLOW if status_code < 500 else Fore.RED)
                             print(f"      [{i:03}/{len(payloads):03}] "
                                 f"GET {path}?{param_name}=... | "
@@ -324,7 +349,7 @@ def fuzz_with_dict(base_url, client, generator, reporter):
                                 print(f"        Snippet  : {response_text[:120]!r}")
                                 print(f"{Style.RESET_ALL}")
 
-                # Resumen por endpoint
+                # Resume
                 print(f"\n{Fore.CYAN}  [SUMMARY] {method.upper()} {path}")
                 print(f"            Requests sent : {total_requests}")
                 print(f"            Findings      : {Fore.RED if findings_in_path else Fore.GREEN}{findings_in_path}{Style.RESET_ALL}")
@@ -334,15 +359,21 @@ def main():
     show_banner()
     args = get_args()
     base_url = args.url
-    spec_path = args.specs
-    mode = args.mode
+    spec_path = args.spec
+    mode = args.m
+    wordlist = args.w
+    stealth = args.stealth
 
-    client = FuzzerHttpClient(base_url)
+    print(f"{Fore.WHITE}[•] Stealth Mode {Fore.CYAN}ENABLED{Fore.WHITE}") if stealth else print(f"{Fore.WHITE}[•] Stealth Mode {Fore.YELLOW}DISABLED{Fore.WHITE}")
+
+    delay = 0.1 if stealth else 0.2
+
+    client = FuzzerHttpClient(base_url, delay, stealth)
     generator = PayloadGenerator()
     reporter = Reporter()
 
     if mode == 'dict':
-        fuzz_with_dict(base_url, client, generator, reporter)
+        fuzz_with_dict(base_url, client, generator, reporter, wordlist)
     elif mode == 'spec':
         if not spec_path:
             print(f"{Fore.RED}[!] Error: The 'spec' mode requires the argument --spec.")
