@@ -1,7 +1,7 @@
 import random
-from time import sleep
 from colorama import Fore, Style
-from utils import Utils
+from utils.file import Utils
+from utils.spinner import Spinner
 
 class Fuzzer():
     
@@ -68,7 +68,7 @@ class Fuzzer():
 
                             status_code, _, response_text, duration_ms = client.send_request(method, path, fuzz_payload)
 
-    def fuzz_with_dict(self, base_url, client, generator, reporter, wordlist=None):
+    def fuzz_with_dict(self, base_url, client, generator, reporter, wordlist=None, verbose=False):
         load_wordlist = Utils().load_wordlist
         # Print MODE
         print(f"{Fore.WHITE}[•] Running on {Fore.YELLOW}Dictionary{Fore.WHITE} MODE")
@@ -79,7 +79,8 @@ class Fuzzer():
         methods    = ['GET', 'POST', 'PUT', 'DELETE']
 
 
-        print(f"\n{Fore.CYAN}[*] CALIBRATING baseline (soft-404 detection)...{Style.RESET_ALL}")
+        #Calibrate baseline to detect soft redirect
+        print(f"{Fore.WHITE}[•] CALIBRATED baseline (soft-404 detection){Style.RESET_ALL}")
 
         fake_path = f"/__baseline_does_not_exist_{random.randint(10000, 99999)}__"
         bl_status, _, bl_body, _ = client.send_request('GET', fake_path, {})
@@ -89,10 +90,9 @@ class Fuzzer():
         LOGIN_PATTERNS = ["/login", "/signin", "/auth", "/session", "/account"]
         login_in_baseline = any(p in baseline_body.lower() for p in LOGIN_PATTERNS)
 
-        print(f"{Fore.CYAN}    Baseline status : {bl_status}")
-        print(f"    Baseline length  : {baseline_len} chars")
-        print(f"    Redirects to login page: {Fore.YELLOW if login_in_baseline else Fore.GREEN}{login_in_baseline}{Style.RESET_ALL}")
-        print(f"{Fore.WHITE}{'═' * 60}{Style.RESET_ALL}")
+        print(f"{Fore.WHITE}    Baseline status :{Fore.CYAN}{bl_status}")
+        print(f"{Fore.WHITE}    Baseline length  : {Fore.CYAN}{baseline_len} chars")
+
 
         def is_real_endpoint(status_code: int, body: str) -> tuple[bool, str]:
 
@@ -132,14 +132,15 @@ class Fuzzer():
             return False, f"Unhandled status {status_code}"
 
 
-        print(f"\n{Fore.MAGENTA}[*] PHASE 1:{Fore.WHITE} ENDPOINT DISCOVERY")
-        print(f"{Fore.WHITE}{'═' * 60}{Style.RESET_ALL}")
+        # Init fuzzing directories
+        spinner =  Spinner()
+        spinner.print_header("Endpoint Discovering", "🌐")
 
         discovered_endpoints = set()
         total_checked = 0
 
         for endpoint in endpoints:
-            path = f"/{endpoint}"
+            path = f"{endpoint}"
             status_code, _, response_text, duration_ms = client.send_request('GET', path, {})
             total_checked += 1
 
@@ -150,46 +151,44 @@ class Fuzzer():
 
             if valid:
                 discovered_endpoints.add(path)
-                print(f"  {Fore.GREEN}[✔]{Style.RESET_ALL} {base_url}{path:<35} "
+                print(f"  {Fore.GREEN}[+]{Style.RESET_ALL} {base_url}{path:<35} "
                     f"{status_color}{status_code}{Style.RESET_ALL}  "
                     f"{duration_ms:>7.1f}ms  {Fore.GREEN}{reason}{Style.RESET_ALL}")
             else:
 
-                print(f"  {Fore.RED}[✘]{Style.RESET_ALL} {base_url}{path:<35} "
+                print(f"  {Fore.RED}[x]{Style.RESET_ALL} {base_url}{path:<35} "
                     f"{status_color}{status_code}{Style.RESET_ALL}  "
                     f"{duration_ms:>7.1f}ms  {Fore.RED}{reason}{Style.RESET_ALL}")
 
-        print(f"\n{Fore.CYAN}{'═' * 60}")
-        print(f"  [DISCOVERY SUMMARY]")
+        print(f"\n{Fore.WHITE}{'═' * 72}")
         print(f"  Checked    : {total_checked} endpoints")
         print(f"  Discovered : {Fore.GREEN}{len(discovered_endpoints)}{Fore.CYAN} valid endpoints")
         print(f"  Rejected   : {Fore.RED}{total_checked - len(discovered_endpoints)}{Fore.CYAN} soft/hard 404s")
-        print(f"{'═' * 60}{Style.RESET_ALL}")
+        #print(f"{'═' * 72}{Style.RESET_ALL}")
 
         if not discovered_endpoints:
-            print(Fore.RED + "[-] No endpoints found.")
+            print(Fore.RED + "  [-] No endpoints found.")
             return
 
 
-        # Fuzzin magic
-        print(f"\n{Fore.MAGENTA}[*] PHASE 2: FUZZING DISCOVERED ENDPOINTS")
-        print(f"{Fore.WHITE}═"*60 + f"{Style.RESET_ALL}")
+        # Start Fuzzing magic
+        spinner =  Spinner()
+        spinner.print_header("Endpoint Fuzzing", "🌐")
 
         for path in discovered_endpoints:
             for path in discovered_endpoints:
                 for method in methods:
-                    print(f"\n{Fore.CYAN}{'='*60}")
-                    print(f"{Fore.YELLOW}[+] Fuzzing {method.upper()} {path}")
-                    print(f"{Fore.CYAN}    Params to test : {len(parameters)}")
-                    print(f"{Fore.CYAN}    Payloads/param  : {sum(len(generator.generate(p, 'string')) for p in parameters)}")
-                    print(f"{Fore.CYAN}{'='*60}{Style.RESET_ALL}")
+                    print(f"{Fore.WHITE}[•] Fuzzing {Fore.YELLOW}{method.upper()} {path}")
+                    print(f"{Fore.WHITE}    Params to test : {Fore.CYAN}{len(parameters)}")
+                    print(f"{Fore.WHITE}    Payloads/param  : {Fore.CYAN}{sum(len(generator.generate(p, 'string')) for p in parameters)}")
+                    print(f"{Fore.WHITE}{'═'*72}{Style.RESET_ALL}")
 
                     total_requests = 0
                     findings_in_path = 0
 
                     for param_name in parameters:
                         payloads = generator.generate(param_name, 'string')
-                        print(f"\n{Fore.BLUE}  [>] Parameter: '{param_name}' — {len(payloads)} payloads{Style.RESET_ALL}")
+                        print(f"\n{Fore.CYAN}  [*] Parameter: '{param_name}' — {len(payloads)} payloads{Style.RESET_ALL}")
 
                         for i, payload in enumerate(payloads, 1):
                             if payload is None:
@@ -210,52 +209,54 @@ class Fuzzer():
                                 total_requests += 1
 
                                 # Verbose
-                                status_color = Fore.GREEN if status_code < 400 else (Fore.YELLOW if status_code < 500 else Fore.RED)
-                                print(f"      [{i:03}/{len(payloads):03}] "
-                                    f"GET {path}?{param_name}=... | "
-                                    f"{status_color}{status_code}{Style.RESET_ALL} | "
-                                    f"{duration_ms:.1f}ms{' ⚠ SLOW' if duration_ms > 5000 else ''}")
+                                if verbose:
+                                    status_color = Fore.GREEN if status_code < 400 else (Fore.YELLOW if status_code < 500 else Fore.RED)
+                                    print(f"      [{i:03}/{len(payloads):03}] "
+                                        f"GET {path}?{param_name}=... | "
+                                        f"{status_color}{status_code}{Style.RESET_ALL} | "
+                                        f"{duration_ms:.1f}ms{' ⚠ SLOW' if duration_ms > 5000 else ''}")
 
-                                if status_code >= 500 or duration_ms > 5000:
-                                    findings_in_path += 1
-                                    reason = (f"Dict-Fuzz (Query): '{param_name}'='{payload}'. "
-                                            f"Status: {status_code}, Time: {duration_ms:.2f}ms")
-                                    reporter.add_finding(method, path, {"payload": payload}, reason, response_text, "critical")
-                                    print(f"\n{Fore.RED}  [!!!] CRITICAL ANOMALY DETECTED")
-                                    print(f"        Method   : {method}")
-                                    print(f"        Path     : {path}")
-                                    print(f"        Param    : {param_name}")
-                                    print(f"        Payload  : {repr(payload)}")
-                                    print(f"        Status   : {status_code}")
-                                    print(f"        Duration : {duration_ms:.2f}ms")
-                                    print(f"        Snippet  : {response_text[:120]!r}")
-                                    print(f"{Style.RESET_ALL}")
+                                    if status_code >= 500 or duration_ms > 5000:
+                                        findings_in_path += 1
+                                        reason = (f"Dict-Fuzz (Query): '{param_name}'='{payload}'. "
+                                                f"Status: {status_code}, Time: {duration_ms:.2f}ms")
+                                        reporter.add_finding(method, path, {"payload": payload}, reason, response_text, "critical")
+                                        print(f"\n{Fore.RED}  [!!!] CRITICAL ANOMALY DETECTED")
+                                        print(f"        Method   : {method}")
+                                        print(f"        Path     : {path}")
+                                        print(f"        Param    : {param_name}")
+                                        print(f"        Payload  : {repr(payload)}")
+                                        print(f"        Status   : {status_code}")
+                                        print(f"        Duration : {duration_ms:.2f}ms")
+                                        print(f"        Snippet  : {response_text[:120]!r}")
+                                        print(f"{Style.RESET_ALL}")
 
                             if method in ['POST', 'PUT']:
                                 body_payload = {param_name: payload}
                                 status_code, _, response_text, duration_ms = client.send_request(method, path, body_payload)
                                 total_requests += 1
 
-                                status_color = Fore.GREEN if status_code < 400 else (Fore.YELLOW if status_code < 500 else Fore.RED)
-                                print(f"      [{i:03}/{len(payloads):03}] "
-                                    f"{method} {path} body={{{param_name}: ...}} | "
-                                    f"{status_color}{status_code}{Style.RESET_ALL} | "
-                                    f"{duration_ms:.1f}ms{' ⚠ SLOW' if duration_ms > 5000 else ''}")
+                                if verbose:    
+                                    status_color = Fore.GREEN if status_code < 400 else (Fore.YELLOW if status_code < 500 else Fore.RED)
+                                    print(f"      [{i:03}/{len(payloads):03}] "
+                                        f"{method} {path} body={{{param_name}: ...}} | "
+                                        f"{status_color}{status_code}{Style.RESET_ALL} | "
+                                        f"{duration_ms:.1f}ms{' ⚠ SLOW' if duration_ms > 5000 else ''}")
 
-                                if status_code >= 500 or duration_ms > 5000:
-                                    findings_in_path += 1
-                                    reason = (f"Dict-Fuzz (Body): '{param_name}'='{payload}'. "
-                                            f"Status: {status_code}, Time: {duration_ms:.2f}ms")
-                                    reporter.add_finding(method, path, {"payload": payload}, reason, response_text, "critical")
-                                    print(f"\n{Fore.RED}  [!!!] CRITICAL ANOMALY DETECTED")
-                                    print(f"        Method   : {method}")
-                                    print(f"        Path     : {path}")
-                                    print(f"        Param    : {param_name}")
-                                    print(f"        Payload  : {repr(payload)}")
-                                    print(f"        Status   : {status_code}")
-                                    print(f"        Duration : {duration_ms:.2f}ms")
-                                    print(f"        Snippet  : {response_text[:120]!r}")
-                                    print(f"{Style.RESET_ALL}")
+                                    if status_code >= 500 or duration_ms > 5000:
+                                        findings_in_path += 1
+                                        reason = (f"Dict-Fuzz (Body): '{param_name}'='{payload}'. "
+                                                f"Status: {status_code}, Time: {duration_ms:.2f}ms")
+                                        reporter.add_finding(method, path, {"payload": payload}, reason, response_text, "critical")
+                                        print(f"\n{Fore.RED}  [!!!] CRITICAL ANOMALY DETECTED")
+                                        print(f"        Method   : {method}")
+                                        print(f"        Path     : {path}")
+                                        print(f"        Param    : {param_name}")
+                                        print(f"        Payload  : {repr(payload)}")
+                                        print(f"        Status   : {status_code}")
+                                        print(f"        Duration : {duration_ms:.2f}ms")
+                                        print(f"        Snippet  : {response_text[:120]!r}")
+                                        print(f"{Style.RESET_ALL}")
 
                     # Resume
                     print(f"\n{Fore.CYAN}  [SUMMARY] {method.upper()} {path}")

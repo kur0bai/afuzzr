@@ -1,16 +1,11 @@
 import argparse
-import random
 import sys
-from time import sleep
-import yaml
-import json
-import re
 from colorama import Fore, Style, init
-from http_client import FuzzerHttpClient
+from core.http_client import FuzzerHttpClient
 from payload_generator import PayloadGenerator
 from reporter import Reporter
 from fuzzer import Fuzzer
-from utils import Utils
+from utils.file import Utils
 
 init(autoreset=True)
 
@@ -60,7 +55,8 @@ def get_args():
     parser.add_argument("-s", "--stealth", 
                     action="store_true", 
                     required=False, 
-                    help="Enable stealth mode (Delay and WAF evasion)")                                     
+                    help="Enable stealth mode (Delay and WAF evasion)")
+    parser.add_argument("-vvv", action="store_true", required=False, help="Enabling verbose")                                                     
     args = parser.parse_args()
     return args
 
@@ -73,30 +69,35 @@ def main():
     mode = args.m
     wordlist = args.w
     stealth = args.stealth
+    verbose = args.vvv
 
-    print(f"{Fore.WHITE}[•] Stealth Mode {Fore.CYAN}ENABLED{Fore.WHITE}") if stealth else print(f"{Fore.WHITE}[•] Stealth Mode {Fore.YELLOW}DISABLED{Fore.WHITE}")
+    try:
+        print(f"{Fore.WHITE}[•] Stealth Mode {Fore.CYAN}ENABLED{Fore.WHITE}") if stealth else print(f"{Fore.WHITE}[•] Stealth Mode {Fore.YELLOW}DISABLED{Fore.WHITE}")
 
-    delay = 0.1 if stealth else 0.2
+        delay = 0.1 if stealth else 0.2
 
-    client = FuzzerHttpClient(base_url, delay, stealth)
-    generator = PayloadGenerator()
-    reporter = Reporter()
+        client = FuzzerHttpClient(base_url, delay, stealth)
+        generator = PayloadGenerator()
+        reporter = Reporter()
 
-    fuzzer = Fuzzer()
-    utils = Utils()
+        fuzzer = Fuzzer()
+        utils = Utils()
 
-    if mode == 'dict':
-        fuzzer.fuzz_with_dict(base_url, client, generator, reporter, wordlist)
-    elif mode == 'spec':
-        if not spec_path:
-            print(f"{Fore.RED}[!] Error: The 'spec' mode requires the argument --spec.")
-            return
-        spec = utils.load_openapi_spec(spec_path)
-        fuzzer.fuzz_with_spec(spec, base_url, client, generator, reporter)
+        if mode == 'dict':
+            fuzzer.fuzz_with_dict(base_url, client, generator, reporter, wordlist, verbose)
+        elif mode == 'spec':
+            if not spec_path:
+                print(f"{Fore.RED}[!] Error: The 'spec' mode requires the argument --spec.")
+                return
+            spec = utils.load_openapi_spec(spec_path)
+            fuzzer.fuzz_with_spec(spec, base_url, client, generator, reporter)
 
 
-    print(f"\n{Fore.GREEN}[*] Fuzzing completed.")
-    reporter.save_report('fuzzer_report.html')
+        print(f"\n{Fore.GREEN}[*] Fuzzing completed.")
+        reporter.save_report('fuzzer_report.html')
+    except KeyboardInterrupt as ex:
+        print(f"\n\n{Fore.RED}[!] Ctrl+C detected. Exiting")
+        sys.exit(0)    
 
 if __name__ == "__main__":
     import os

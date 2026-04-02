@@ -1,7 +1,6 @@
 import sys
 import yaml
 import json
-import re
 from colorama import Fore, Style
 
 class Utils():

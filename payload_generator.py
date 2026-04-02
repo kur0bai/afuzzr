@@ -1,55 +1,97 @@
 import random
-import string
+
+from core.payloads import Payloads
 
 class PayloadGenerator:
     def __init__(self):
-        self.sql_injection = ["'", "''", "1' OR '1'='1", "1' UNION SELECT NULL--"]
-        self.xss = ["<script>alert(1)</script>", "javascript:alert(1)", "<img src=x onerror=alert(1)>"]
-        self.path_traversal = ["..", "../", "..\\", "../../../../../etc/passwd"]
-        self.command_injection = ["; ls", "| ls", "`ls`", "$(ls)"]
-        self.ssrf = ["http://127.0.0.1", "http://localhost", "http://169.254.169.254/latest/meta-data/"] # Metadata de AWS
-        self.open_redirect = ["https://google.com", "///google.com"]
+        payloads = Payloads()
+        self.sql_injection = payloads.sql_injection
+        self.nosql_injection = payloads.nosql_injection
+        self.command_injection = payloads.command_injection
+        self.ssti = payloads.ssti
+        self.xxe = payloads.xxe
+        self.xss = payloads.xss
+        self.jwt_attacks = payloads.jwt_attacks
+        self.api_key_bypass = payloads.api_key_bypass
+        self.idor = payloads.idor
+        self.mass_assignment = payloads.mass_assignment
+        self.graphql = payloads.graphql
+        self.path_traversal = payloads.path_traversal
+        self.ssrf = payloads.ssrf
+        self.open_redirect = payloads.open_redirect
+        self.overflow = payloads.overflow
+        self.type_confusion = payloads.type_confusion
 
     def _get_base_payloads(self, data_type: str) -> list:
-    # None y "" son casos válidos pero los marcamos aparte
-        edge_cases = [None, ""]
+        edge_cases = [None, "", " ", "\t", "\n"]
         payloads = []
+
         if data_type == 'string':
-            payloads.extend(["A" * 100, "A" * 10000])
+            payloads.extend(self.overflow[:3])  
+            payloads.extend(self.type_confusion)
         elif data_type == 'integer':
-            payloads.extend([-1, 0, 999999999])
-        return edge_cases + payloads  # edge cases primero, controlados
+            payloads.extend([-1, 0, 1, 999999999, -999999999])
+        elif data_type == 'boolean':
+            payloads.extend(["true", "false", "1", "0", "yes", "no"])
+
+        return edge_cases + payloads
 
     def generate(self, param_name: str, data_type: str) -> list:
         payloads = self._get_base_payloads(data_type)
-        param_name_lower = param_name.lower()
+        p = param_name.lower()
 
-        if any(k in param_name_lower for k in ['id', 'user', 'account']):
+        # Auth params
+        if any(k in p for k in ['token', 'jwt', 'auth', 'bearer', 'key', 'secret', 'api_key', 'apikey']):
+            payloads.extend(self.jwt_attacks)
+            payloads.extend(self.api_key_bypass)
+
+        # ID params → IDOR + SQLi
+        if any(k in p for k in ['id', 'uid', 'uuid', 'user_id', 'account_id', 'object']):
+            payloads.extend(self.idor)
             payloads.extend(self.sql_injection)
-            payloads.append("../../../etc/passwd")
+            payloads.extend(self.nosql_injection)
 
-        if any(k in param_name_lower for k in ['redirect', 'url', 'next', 'return']):
+        # Redirect / URL params → SSRF + Open Redirect
+        if any(k in p for k in ['url', 'redirect', 'next', 'return', 'callback', 'goto', 'target', 'src']):
             payloads.extend(self.open_redirect)
             payloads.extend(self.ssrf)
 
-        if any(k in param_name_lower for k in ['query', 'search', 'filter', 'sort']):
+        # File / Path params → Path Traversal + SSRF
+        if any(k in p for k in ['file', 'path', 'folder', 'dir', 'document', 'upload', 'import']):
+            payloads.extend(self.path_traversal)
+            payloads.extend(self.ssrf)
+
+        # Query / Search params → SQLi + NoSQLi + Command Injection
+        if any(k in p for k in ['query', 'search', 'filter', 'sort', 'order', 'where', 'q']):
             payloads.extend(self.sql_injection)
+            payloads.extend(self.nosql_injection)
             payloads.extend(self.command_injection)
 
-        if any(k in param_name_lower for k in ['file', 'path', 'folder']):
-            payloads.extend(self.path_traversal)
+        # Template / Content params → SSTI + XSS
+        if any(k in p for k in ['template', 'name', 'title', 'body', 'message', 'content', 'text', 'subject']):
+            payloads.extend(self.ssti)
+            payloads.extend(self.xss)
+
+        # Object / Data params → Mass Assignment + XXE
+        if any(k in p for k in ['data', 'body', 'payload', 'object', 'user', 'profile', 'account', 'role']):
+            payloads.extend(self.mass_assignment)
+            payloads.extend(self.xxe)
+
+        # GraphQL
+        if any(k in p for k in ['query', 'graphql', 'gql', 'mutation', 'operation']):
+            payloads.extend(self.graphql)
+
 
         if data_type == 'string':
             payloads.extend(self.xss)
-            payloads.extend(self.sql_injection)
+            payloads.extend(self.sql_injection[:6]) 
 
-        # Deduplicar preservando orden, manejando None correctamente
-        seen = set()
-        unique = []
-        for p in payloads:
-            key = (type(p), p)  # distingue None de "" de 0
+
+        seen, unique = set(), []
+        for pl in payloads:
+            key = (type(pl), pl)
             if key not in seen:
                 seen.add(key)
-                unique.append(p)
+                unique.append(pl)
 
         return unique

@@ -2,11 +2,14 @@ import sys
 import threading
 import time
 
+from colorama import Fore, Style, init
+
 
 class Spinner:
     """
     Function to show and hide spinner animation
     """
+    init(autoreset=True)
     def __init__(self, message="Loading"):
         self.spinner = ["⢿", "⣻", "⣽", "⣾", "⣷", "⣯", "⣟", "⡿"]
         self.message = message
@@ -38,4 +41,10 @@ class Spinner:
                 sys.stdout.write(f"\r{self.message} {frame} ")
                 sys.stdout.flush()
                 time.sleep(0.1)  # speed
+
+    def print_header(self, title: str, emoji: str = "⚡"):
+        print(f"\n{Fore.WHITE}{Style.BRIGHT}╔" + "═" * 72 + "╗")
+        print(f"║  {Fore.CYAN}{emoji}  {title.upper():<48}  {Fore.WHITE}                ║")
+        print(f"╚" + "═" * 72 + f"╝{Style.RESET_ALL}")
+        print()  
 
