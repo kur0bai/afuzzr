@@ -11,35 +11,45 @@ class PayloadGenerator:
         self.open_redirect = ["https://google.com", "///google.com"]
 
     def _get_base_payloads(self, data_type: str) -> list:
-        payloads = [None, ""]
+    # None y "" son casos válidos pero los marcamos aparte
+        edge_cases = [None, ""]
+        payloads = []
         if data_type == 'string':
             payloads.extend(["A" * 100, "A" * 10000])
         elif data_type == 'integer':
             payloads.extend([-1, 0, 999999999])
-        return payloads
+        return edge_cases + payloads  # edge cases primero, controlados
 
     def generate(self, param_name: str, data_type: str) -> list:
         payloads = self._get_base_payloads(data_type)
         param_name_lower = param_name.lower()
 
-        # By parameter names
-        if any(keyword in param_name_lower for keyword in ['id', 'user', 'account']):
+        if any(k in param_name_lower for k in ['id', 'user', 'account']):
             payloads.extend(self.sql_injection)
-            payloads.append("../../../etc/passwd") # IDOR/Path Traversal
+            payloads.append("../../../etc/passwd")
 
-        if any(keyword in param_name_lower for keyword in ['redirect', 'url', 'next', 'return']):
+        if any(k in param_name_lower for k in ['redirect', 'url', 'next', 'return']):
             payloads.extend(self.open_redirect)
             payloads.extend(self.ssrf)
 
-        if any(keyword in param_name_lower for keyword in ['query', 'search', 'filter', 'sort']):
+        if any(k in param_name_lower for k in ['query', 'search', 'filter', 'sort']):
             payloads.extend(self.sql_injection)
             payloads.extend(self.command_injection)
 
-        if any(keyword in param_name_lower for keyword in ['file', 'path', 'folder']):
+        if any(k in param_name_lower for k in ['file', 'path', 'folder']):
             payloads.extend(self.path_traversal)
 
         if data_type == 'string':
             payloads.extend(self.xss)
             payloads.extend(self.sql_injection)
-        
-        return list(set(payloads)) # delte duplicates
+
+        # Deduplicar preservando orden, manejando None correctamente
+        seen = set()
+        unique = []
+        for p in payloads:
+            key = (type(p), p)  # distingue None de "" de 0
+            if key not in seen:
+                seen.add(key)
+                unique.append(p)
+
+        return unique
