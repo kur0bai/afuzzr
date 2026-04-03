@@ -1,7 +1,8 @@
 import random
 import re
 from colorama import Fore, Style
-from core.payload_inspector import EndpointInspector
+from core.api_intel import APIInspector
+from core.detectors import BOLADetector, MassAssignmentDetector
 from utils.file import Utils
 from utils.header import Header
 
@@ -138,192 +139,88 @@ class Fuzzer():
         print(f"  ├─ Anomaly  : {anomaly}")
         print(f"  └─ Snippet  : {body[:120]!r}{Style.RESET_ALL}\n")
 
+    def fuzz_discovered_endpointse(self, discovered_endpoints, methods, client, reporter, verbose=False):
+        inspector = APIInspector(client)
 
-    def fuzz_discovered_endpoints(self, discovered_endpoints, methods, parameters, generator, client, reporter, verbose=False):
-        inspector = EndpointInspector(client)
+        #for path in discovered_endpoints:  
+
+        potential_hits = []
 
         for path in discovered_endpoints:
-            for path in discovered_endpoints:
-                for method in methods:
+            intel = inspector.inspect("GET", path)
+            if intel["vectors"]:
+                print(f"\n{Fore.WHITE}{'═' * 72}{Style.RESET_ALL}")
+                potential_hits.append(intel)
+                print(f"\n{Fore.WHITE}[•] IDENTIFIED: {Fore.YELLOW}{intel['method']} {Fore.CYAN}{intel['path']}")
+                for v in intel["vectors"]:
+                    color = Fore.RED if v["confidence"] == "HIGH" else Fore.MAGENTA
+                    print(f"   └─ {color}[{v['type']}] {Style.RESET_ALL}{v['description']}")
 
-                    # Using intel from inspector
-                    print(f"\n{Fore.CYAN}  [INSPECT] {method} {path}{Style.RESET_ALL}")
-                    intel = inspector.inspect(method, path)
-
-                    if intel["technology_hints"]:
-                        print(f"  {Fore.YELLOW}[TECH] {', '.join(intel['technology_hints'])}{Style.RESET_ALL}")
-                    if intel["auth"]["required"]:
-                        print(f"  {Fore.YELLOW}[AUTH] Authentication required{Style.RESET_ALL}")
-                    if intel["schema"]:
-                        print(f"  {Fore.YELLOW}[SCHEMA] Response keys: {intel['schema']}{Style.RESET_ALL}")
+                if not potential_hits:
+                    print(f"\n{Fore.GREEN}No obvious vectors found in the current scope.")
+                    return
 
 
-                    if not intel["should_fuzz"]:
-                        print(f"  {Fore.RED}[SKIP] {path} — no attack surface (score={intel['attack_surface_score']}){Style.RESET_ALL}")
-                        continue
+                print(f"\n{Fore.CYAN}  ┌─ SUMMARY {path}")
+                #print(f"  ├─ Requests sent : {total_requests}")
+                print(f"  └─  Findings      : {len(potential_hits)}{Fore.CYAN}")
+                #print(f"  ├─ Path fuzzed   : {len(fuzz_params['path'])} params")
+                #print(f"  ├─ Body fuzzed   : {len(fuzz_params['body'])} params")
+                #print(f"  └─ Query fuzzed  : {len(fuzz_params['query'])} params{Style.RESET_ALL}") 
+
+    def fuzz_discovered_endpoints(self, discovered_endpoints, client, reporter, verbose=False):
+        inspector = APIInspector(client)
+        potential_hits = []
+        for path in discovered_endpoints:
+            intel = inspector.inspect("GET", path)
+            
+            if not intel["vectors"]:
+                if verbose: print(f"{Fore.WHITE}  [-] Skipping {path}: No obvious vectors.{Style.RESET_ALL}")
+                continue
+
+            potential_hits.append(intel)
+            self._print_target_card(intel) 
+
+            for vector in intel["vectors"]:
+                if vector["confidence"] == "HIGH":
+                    print(f"\n{Fore.RED}  [!] HIGH CONFIDENCE VECTOR DETECTED: {vector['type']}")
                     
-                    priority_params = (
-                        intel["path_params"] +
-                        intel["schema"]["sensitive_fields"] +
-                        intel["schema"]["nested_objects"]
-                    )
+                    if vector["type"] == "BOLA_PATH":
+                        print(f"{Fore.YELLOW}  [?] Should I attempt BOLA exploitation on {path}?")
+                        if input("  (y/n): ").lower() == 'y':
+                            self._run_bola_module(path, intel, client, reporter)
 
-                    remaining_params = [p for p in parameters if p not in priority_params]
-                    active_params = priority_params + remaining_params
+                    elif vector["type"] == "MASS_ASSIGNMENT":
+                        print(f"{Fore.YELLOW}  [?] Attempt Mass Assignment on discovered fields?")
+                        if input("  (y/n): ").lower() == 'y':
+                            self._run_mass_assignment_module(path, intel, client, reporter)
 
-                    print(f"\n{Fore.WHITE}[•] Fuzzing {Fore.YELLOW}{method.upper()} {path}")
-                    print(f"{Fore.WHITE}    Attack score   : {Fore.CYAN}{intel['attack_surface_score']}/10")
-                    print(f"{Fore.WHITE}    Active params  : {Fore.CYAN}{len(active_params)} "
-                        f"({len(priority_params)} priority + {len(remaining_params)} wordlist)")
-                    print(f"{Fore.WHITE}    Total payloads : {Fore.CYAN}"
-                        f"{sum(len(generator.generate(p, 'string')) for p in active_params)}")
-                    print(f"{Fore.WHITE}{'═' * 72}{Style.RESET_ALL}")
+                    elif vector["type"] == "ID_ENUMERATION":
+                        print(f"{Fore.YELLOW}  [?] Collection detected. Attempt ID Discovery/Fuzzing?")
+                        if input("  (y/n): ").lower() == 'y':
+                            new_ids = self._discover_ids_at_runtime(path, client)
+                            if new_ids: 
+                                print(f"  [+] Found {len(new_ids)} valid IDs. Ready for BOLA testing.")
 
-                    total_requests   = 0
-                    findings_in_path = 0
+        #self._print_final_summary(potential_hits)
 
-                    for param_name in active_params:
-                        
-                        data_type = self._infer_param_type(param_name, intel)
-                        payloads  = generator.generate(param_name, data_type)
+    def _print_final_summary():
+        print(f"\n{Fore.CYAN}  ┌─ SUMMARY {path}")
+        #print(f"  ├─ Requests sent : {total_requests}")
+        print(f"  └─  Findings      : {len(potential_hits)}{Fore.CYAN}")
+        #print(f"  ├─ Path fuzzed   : {len(fuzz_params['path'])} params")
+        #print(f"  ├─ Body fuzzed   : {len(fuzz_params['body'])} params")
+        #print(f"  └─ Query fuzzed  : {len(fuzz_params['query'])} params{Style.RESET_ALL}") 
 
-                        is_priority = param_name in priority_params
-                        param_label = f"{Fore.YELLOW}[PRIORITY]{Fore.CYAN}" if is_priority else f"{Fore.WHITE}[wordlist]{Fore.CYAN}"
-
-                        print(f"\n{Fore.CYAN}  [*] {param_label} '{param_name}' "
-                            f"— {len(payloads)} payloads (type={data_type}){Style.RESET_ALL}")
-
-                        if param_name in intel["path_params"]:
-                            param_label = f"{Fore.RED}[PATH-PARAM]"
-                            param_context = "IDOR / Path Traversal"
-                        elif param_name in intel["schema"]["sensitive_fields"]:
-                            param_label = f"{Fore.YELLOW}[SENSITIVE]"
-                            param_context = "Mass Assignment / Privilege Escalation"
-                        elif param_name in intel["schema"]["nested_objects"]:
-                            param_label = f"{Fore.MAGENTA}[NESTED-OBJ]"
-                            param_context = "Mass Assignment / Injection"
-                        else:
-                            param_label = f"{Fore.WHITE}[WORDLIST]"
-                            param_context = "Generic Fuzzing"
-
-                        print(f"\n{Fore.CYAN}  ┌─ Parameter  : {param_label} '{param_name}'{Fore.CYAN}")
-                        print(f"  ├─ Context   : {param_context}")
-                        print(f"  ├─ Data type : {data_type}")
-                        print(f"  ├─ Payloads  : {len(payloads)}")
-                        print(f"  └─ Target    : {method} {path}{'?' + param_name + '=...' if method == 'GET' else ' body={' + param_name + ': ...}'}{Style.RESET_ALL}")
-                        print()        
-
-
-                        for i, payload in enumerate(payloads, 1):
-                            if payload is None:
-                                payload_str  = "null"
-                                payload_repr = "None (null test)"
-                            elif payload == "":
-                                payload_str  = ""
-                                payload_repr = '"" (empty string)'
-                            else:
-                                payload_str  = str(payload)
-                                payload_repr = repr(payload_str[:40] + "..." if len(payload_str) > 40 else payload_str)
-
-                            # GET method
-                            if method == 'GET':
-                                status_code, _, response_text, duration_ms = client.send_request(
-                                    method, path, {param_name: payload_str}
-                                )
-                                total_requests += 1
-
-                                anomaly = self._detect_anomaly(status_code, duration_ms, response_text)
-
-                                if verbose:
-                                    status_color = (Fore.GREEN  if status_code < 400 else
-                                                    Fore.YELLOW if status_code < 500 else Fore.RED)
-                                    slow_flag    = f" {Fore.YELLOW}⚠ SLOW{Style.RESET_ALL}"    if duration_ms > 3000 else ""
-                                    anomaly_flag = f" {Fore.RED}⚡ ANOMALY — {anomaly}{Style.RESET_ALL}" if anomaly else ""
-
-                                    
-                                    print(f"  {Fore.WHITE}[{i:03}/{len(payloads):03}] "
-                                        f"{Fore.CYAN}{payload_repr:<45} "
-                                        f"{status_color}{status_code}{Style.RESET_ALL} "
-                                        f"{Fore.WHITE}{duration_ms:>7.1f}ms"
-                                        f"{slow_flag}{anomaly_flag}")
-
-                                if anomaly:
-                                    findings_in_path += 1
-                                    reason   = (f"Dict-Fuzz (Query): '{param_name}'='{payload_str}'. "
-                                                f"Status: {status_code}, Time: {duration_ms:.2f}ms, "
-                                                f"Anomaly: {anomaly}")
-                                    severity = self._get_severity(status_code, duration_ms, intel)
-                                    reporter.add_finding(method, path, {"payload": payload},
-                                                        reason, response_text, severity)
-                                    self._print_anomaly(method, path, param_name, payload_str,
-                                                        status_code, duration_ms, response_text,
-                                                        anomaly, severity)
-
-                            # POST / PUT / PATCH Methods
-                            if method in ['POST', 'PUT', 'PATCH']:
-                                body_payload = {param_name: payload_str}
-                                status_code, _, response_text, duration_ms = client.send_request(
-                                    method, path, body_payload
-                                )
-                                total_requests += 1
-
-                                anomaly = self._detect_anomaly(status_code, duration_ms, response_text)
-
-                                if verbose:
-                                    self._print_request_line(i, len(payloads), method, path,
-                                                            param_name, status_code, duration_ms, anomaly)
-
-                                if anomaly:
-                                    findings_in_path += 1
-                                    reason = (f"Dict-Fuzz (Body): '{param_name}'='{payload_str}'. "
-                                            f"Status: {status_code}, Time: {duration_ms:.2f}ms, "
-                                            f"Anomaly: {anomaly}")
-                                    severity = self._get_severity(status_code, duration_ms, intel)
-                                    reporter.add_finding(method, path, {"payload": payload},
-                                                        reason, response_text, severity)
-                                    self._print_anomaly(method, path, param_name, payload_str,
-                                                        status_code, duration_ms, response_text,
-                                                        anomaly, severity)
-
-                            # DELETE method
-                            if method == 'DELETE' and param_name in intel["path_params"]:
-                                fuzz_path = re.sub(
-                                    rf'\{{param_name\}}|:({param_name})|<[^>]*{param_name}[^>]*>',
-                                    payload_str, path
-                                )
-                                status_code, _, response_text, duration_ms = client.send_request(
-                                    'DELETE', fuzz_path, {}
-                                )
-                                total_requests += 1
-
-                                anomaly = self._detect_anomaly(status_code, duration_ms, response_text)
-
-                                if verbose:
-                                    self._print_request_line(i, len(payloads), 'DELETE', fuzz_path,
-                                                            param_name, status_code, duration_ms, anomaly)
-
-                                if anomaly:
-                                    findings_in_path += 1
-                                    reason = (f"Dict-Fuzz (Path): DELETE {fuzz_path}. "
-                                            f"Status: {status_code}, Time: {duration_ms:.2f}ms")
-                                    severity = self._get_severity(status_code, duration_ms, intel)
-                                    reporter.add_finding('DELETE', fuzz_path, {"payload": payload},
-                                                        reason, response_text, severity)
-                                    self._print_anomaly('DELETE', fuzz_path, param_name, payload_str,
-                                                        status_code, duration_ms, response_text,
-                                                        anomaly, severity)
-
-                        
-
-                    # Resume
-                    severity_color = Fore.RED if findings_in_path >= 3 else \
-                             Fore.YELLOW if findings_in_path >= 1 else Fore.GREEN
-
-                    print(f"\n{Fore.CYAN}  ┌─ SUMMARY {method.upper()} {path}")
-                    print(f"  ├─ Requests sent : {total_requests}")
-                    print(f"  ├─ Findings      : {severity_color}{findings_in_path}{Fore.CYAN}")
-                    print(f"  └─ Params tested : {len(active_params)} "
-                        f"({len(priority_params)} priority){Style.RESET_ALL}")
+    def _print_target_card(self, intel):
+        """Muestra una tarjeta visual del target para facilitar el análisis."""
+        print(f"\n{Fore.WHITE}╔═{'═' * 60}╗")
+        print(f"║ {Fore.YELLOW}TARGET:{Style.RESET_ALL} {intel['method']} {intel['path']:<47} ║")
+        #print(f"╠═{'═' * 60}╣")
+        for v in intel["vectors"]:
+            color = Fore.RED if v["confidence"] == "HIGH" else Fore.MAGENTA
+            print(f"║ {color}● {v['type']:<18}{Style.RESET_ALL} | {v['description'][:34]:<34} ║")
+        print(f"╚═{'═' * 60}╝")
 
     def fuzz_with_spec(self, spec, base_url, client, generator, reporter):
         print(f"{Fore.CYAN}[*] Starting fuzzing by specs...")
@@ -387,7 +284,7 @@ class Fuzzer():
 
                             status_code, _, response_text, duration_ms = client.send_request(method, path, fuzz_payload)
 
-    def fuzz_with_dict(self, base_url, client, generator, reporter, wordlist=None, verbose=False, success=False):
+    def fuzz_with_dict(self, base_url, client, reporter, wordlist=None, verbose=False, success=False):
         """
         FUZZ using dictionaries, given or default
         """
@@ -440,11 +337,11 @@ class Fuzzer():
             print(Fore.RED + "  [-] No endpoints found.")
             return
 
-        fuzz_yes = input(f"\n{Fore.WHITE}Discovering Completed. Do you want to FUZZ discovered endpoints? y/n ")
-        if fuzz_yes == 'y' or fuzz_yes == "Y":
+        #fuzz_yes = input(f"\n{Fore.WHITE}Discovering Completed. Do you want to FUZZ discovered endpoints? y/n ")
+        #if fuzz_yes == 'y' or fuzz_yes == "Y":
             # Start Fuzzing magic
-            header.print_header("Endpoint Fuzzing", "🔥")
-            self.fuzz_discovered_endpoints(discovered_endpoints, methods, parameters, generator, client,reporter, verbose)
+        header.print_header("Endpoint Fuzzing", "🔥")
+        self.fuzz_discovered_endpoints(discovered_endpoints, client,reporter, verbose)
 
         
 

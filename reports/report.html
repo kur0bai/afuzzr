@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Fuzzer Report — http://localhost:8000</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Segoe UI', monospace;
+            background: #0d1117;
+            color: #c9d1d9;
+            padding: 2rem;
+        }
+        h1 { color: #58a6ff; margin-bottom: 0.5rem; }
+        .meta { color: #8b949e; font-size: 0.85rem; margin-bottom: 2rem; }
+
+        /* Summary cards */
+        .cards {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        .card {
+            flex: 1;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            text-align: center;
+            background: #161b22;
+            border: 1px solid #30363d;
+        }
+        .card .count {
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+        .card .label {
+            font-size: 0.8rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .critical .count { color: #ff4444; }
+        .high     .count { color: #ff8800; }
+        .medium   .count { color: #ffcc00; }
+        .low      .count { color: #44bb44; }
+        .total    .count { color: #58a6ff; }
+
+        /* Table */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        th {
+            background: #161b22;
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 2px solid #30363d;
+            color: #58a6ff;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 1px;
+        }
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid #21262d;
+            vertical-align: top;
+        }
+        tr:hover td { background: #161b22; }
+
+        /* Badges */
+        .badge {
+            padding: 0.2rem 0.6rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+            color: #fff;
+        }
+        .method {
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        .get    { background: #1f6feb; color: #fff; }
+        .post   { background: #238636; color: #fff; }
+        .put    { background: #9e6a03; color: #fff; }
+        .patch  { background: #6e40c9; color: #fff; }
+        .delete { background: #b62324; color: #fff; }
+
+        pre {
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-size: 0.78rem;
+            color: #8b949e;
+        }
+        .snippet {
+            max-height: 80px;
+            overflow: hidden;
+            color: #3fb950;
+        }
+        code {
+            background: #161b22;
+            padding: 0.1rem 0.4rem;
+            border-radius: 4px;
+            color: #79c0ff;
+        }
+
+        /* Filter bar */
+        .filters {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        .filter-btn {
+            padding: 0.4rem 1rem;
+            border-radius: 4px;
+            border: 1px solid #30363d;
+            background: #161b22;
+            color: #c9d1d9;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .filter-btn:hover, .filter-btn.active {
+            background: #21262d;
+            border-color: #58a6ff;
+            color: #58a6ff;
+        }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Fuzzer Report</h1>
+    <div class="meta">
+        Target: <strong>http://localhost:8000</strong> &nbsp;|&nbsp;
+        Started: 2026-04-03 14:34:22 &nbsp;|&nbsp;
+        Duration: 32s &nbsp;|&nbsp;
+        Findings: 0
+    </div>
+
+    <!-- Summary cards -->
+    <div class="cards">
+        <div class="card total">
+            <div class="count">0</div>
+            <div class="label">Total</div>
+        </div>
+        <div class="card critical">
+            <div class="count">0</div>
+            <div class="label">Critical</div>
+        </div>
+        <div class="card high">
+            <div class="count">0</div>
+            <div class="label">High</div>
+        </div>
+        <div class="card medium">
+            <div class="count">0</div>
+            <div class="label">Medium</div>
+        </div>
+        <div class="card low">
+            <div class="count">0</div>
+            <div class="label">Low</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters">
+        <button class="filter-btn active" onclick="filterTable('all')">All</button>
+        <button class="filter-btn" onclick="filterTable('critical')">Critical</button>
+        <button class="filter-btn" onclick="filterTable('high')">High</button>
+        <button class="filter-btn" onclick="filterTable('medium')">Medium</button>
+        <button class="filter-btn" onclick="filterTable('low')">Low</button>
+    </div>
+
+    <!-- Findings table -->
+    <table id="findings-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Severity</th>
+                <th>Method</th>
+                <th>Path</th>
+                <th>Payload</th>
+                <th>Reason</th>
+                <th>Response</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td colspan="8" style="text-align:center;color:#8b949e">No findings</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        function filterTable(severity) {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            event.target.classList.add('active');
+
+            document.querySelectorAll('#findings-table tbody tr').forEach(row => {
+                if (severity === 'all') {
+                    row.classList.remove('hidden');
+                } else {
+                    const badge = row.querySelector('.badge');
+                    const match = badge && badge.textContent.toLowerCase() === severity;
+                    row.classList.toggle('hidden', !match);
+                }
+            });
+        }
+    </script>
+</body>
+</html>

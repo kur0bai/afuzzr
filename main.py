@@ -2,7 +2,6 @@ import argparse
 import sys
 from colorama import Fore, Style, init
 from core.http_client import FuzzerHttpClient
-from core.payload_generator import PayloadGenerator
 from core.reporter import Reporter
 from core.fuzzer import Fuzzer
 from utils.file import Utils
@@ -92,26 +91,31 @@ def main():
         delay = 0.1 if stealth else 0.2
 
         client = FuzzerHttpClient(base_url, delay, stealth)
-        generator = PayloadGenerator()
-        reporter = Reporter()
+        #generator = PayloadGenerator()
+        reporter = Reporter(base_url)
 
         fuzzer = Fuzzer()
         utils = Utils()
 
         if mode == 'dict':
             print(f"{Fore.WHITE}[•] Running on {Fore.YELLOW}Dictionary{Fore.WHITE} MODE")
-            fuzzer.fuzz_with_dict(base_url, client, generator, reporter, wordlist, verbose, success)
+            fuzzer.fuzz_with_dict(base_url, client, reporter, wordlist, verbose, success)
         elif mode == 'spec':
             print(f"{Fore.WHITE}[•] Running on {Fore.YELLOW}Specifications{Fore.WHITE} MODE")
             if not spec_path:
                 print(f"{Fore.RED}[!] Error: The 'spec' mode requires the argument --spec.")
                 return
             spec = utils.load_openapi_spec(spec_path)
-            fuzzer.fuzz_with_spec(spec, base_url, client, generator, reporter)
+            #fuzzer.fuzz_with_spec(spec, base_url, client, generator, reporter)
 
 
         print(f"\n{Fore.GREEN}[•] Fuzzing completed.")
-        reporter.save_report('fuzzer_report.html')
+
+        reporter.print_summary()
+        reporter.generate_json("reports/report.json")
+        reporter.generate_html("reports/report.html")
+
+        #reporter.save_report('fuzzer_report.html')
     except KeyboardInterrupt as ex:
         print(f"\n\n{Fore.RED}[!] Ctrl+C detected. Exiting")
         sys.exit(0)    

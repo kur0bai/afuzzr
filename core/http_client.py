@@ -61,42 +61,54 @@ class FuzzerHttpClient:
                 kwargs["json"] = payload  
 
         return kwargs
+    
+
+    def set_auth_token(self, token: str):
+        """Actualiza el token de portador para esta sesión."""
+        # Detecta si ya trae el prefijo Bearer o es solo el string
+        auth_value = token if token.lower().startswith(("bearer ", "basic ")) else f"Bearer {token}"
+        self.session.headers.update({"Authorization": auth_value})    
 
     def send_request(
         self,
         method: str,
         path: str,
-        payload: Dict[str, Any]
+        payload: Any = None,
+        custom_headers: Dict = None
     ) -> Tuple[int, Dict, str, float]:
-
+        """
+        Envía peticiones con lógica de auditoría.
+        Payload puede ser Dict (JSON/Params) o String (Raw).
+        """
         full_url = f"{self.base_url}{path}"
-
-        # Rotate headers
+        
+        # Rotación de headers en modo sigilo
         if self.stealth:
-            self.session.headers.update({
-                "User-Agent" : random.choice(USER_AGENTS),
-                "Accept"     : random.choice(ACCEPT_HEADERS),
-            })
+            self.session.headers.update({"User-Agent": random.choice(USER_AGENTS)})
 
-        delay = self._get_delay()
-        time.sleep(delay)
+        # Preparar kwargs
+        kwargs = {"timeout": 15, "verify": False, "headers": custom_headers}
+        
+        if payload is not None:
+            if method.upper() == "GET":
+                kwargs["params"] = payload
+            else:
+                # Si es un dict, enviamos JSON (estándar de API moderna)
+                # Si no, enviamos data (raw o form)
+                if isinstance(payload, dict):
+                    kwargs["json"] = payload
+                else:
+                    kwargs["data"] = payload
 
-        kwargs = self._build_request_kwargs(method, payload)
-
+        time.sleep(self._get_delay())
         start_time = time.time()
+
         try:
-            response = self.session.request(method, full_url, **kwargs)
+            response = self.session.request(method.upper(), full_url, **kwargs)
             duration_ms = (time.time() - start_time) * 1000
+            
             return response.status_code, dict(response.headers), response.text, duration_ms
 
-        except requests.exceptions.ConnectionError as e:
+        except Exception as e:
             duration_ms = (time.time() - start_time) * 1000
-            return 0, {}, f"ConnectionError: {e}", duration_ms
-
-        except requests.exceptions.Timeout:
-            duration_ms = (time.time() - start_time) * 1000
-            return 0, {}, "Timeout", duration_ms
-
-        except requests.exceptions.RequestException as e:
-            duration_ms = (time.time() - start_time) * 1000
-            return 0, {}, f"RequestException: {e}", duration_ms
+            return 0, {}, f"Request Error: {str(e)}", duration_ms

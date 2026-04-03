@@ -1,6 +1,14 @@
 /v1
 /v2
 /v3
+/auth
+/auth/login
+/auth/me
+/auth/profile
+/auth/sessions
+/auth/register
+/auth/signin
+/auth/sighup
 /admin
 /login
 /logout

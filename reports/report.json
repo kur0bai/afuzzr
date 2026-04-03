@@ -1,0 +1,13 @@
+{
+  "target": "http://localhost:8000",
+  "started": "2026-04-03T14:34:22.612792",
+  "finished": "2026-04-03T14:34:54.846612",
+  "total": 0,
+  "summary": {
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  },
+  "findings": []
+}
