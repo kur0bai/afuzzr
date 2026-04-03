@@ -76,4 +76,4 @@ class Reporter:
         )
         with open(filename, "w") as f:
             f.write(html_output)
-        print(f"\n[+] Report saved to {filename}")
+        print(f"[+] Report saved to {filename}\n")

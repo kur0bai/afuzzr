@@ -193,6 +193,26 @@ class Fuzzer():
                         print(f"\n{Fore.CYAN}  [*] {param_label} '{param_name}' "
                             f"— {len(payloads)} payloads (type={data_type}){Style.RESET_ALL}")
 
+                        if param_name in intel["path_params"]:
+                            param_label = f"{Fore.RED}[PATH-PARAM]"
+                            param_context = "IDOR / Path Traversal"
+                        elif param_name in intel["schema"]["sensitive_fields"]:
+                            param_label = f"{Fore.YELLOW}[SENSITIVE]"
+                            param_context = "Mass Assignment / Privilege Escalation"
+                        elif param_name in intel["schema"]["nested_objects"]:
+                            param_label = f"{Fore.MAGENTA}[NESTED-OBJ]"
+                            param_context = "Mass Assignment / Injection"
+                        else:
+                            param_label = f"{Fore.WHITE}[WORDLIST]"
+                            param_context = "Generic Fuzzing"
+
+                        print(f"\n{Fore.CYAN}  ┌─ Parameter  : {param_label} '{param_name}'{Fore.CYAN}")
+                        print(f"  ├─ Context   : {param_context}")
+                        print(f"  ├─ Data type : {data_type}")
+                        print(f"  ├─ Payloads  : {len(payloads)}")
+                        print(f"  └─ Target    : {method} {path}{'?' + param_name + '=...' if method == 'GET' else ' body={' + param_name + ': ...}'}{Style.RESET_ALL}")
+                        print()        
+
 
                         for i, payload in enumerate(payloads, 1):
                             if payload is None:
@@ -215,14 +235,23 @@ class Fuzzer():
                                 anomaly = self._detect_anomaly(status_code, duration_ms, response_text)
 
                                 if verbose:
-                                    self._print_request_line(i, len(payloads), method, path,
-                                                            param_name, status_code, duration_ms, anomaly)
+                                    status_color = (Fore.GREEN  if status_code < 400 else
+                                                    Fore.YELLOW if status_code < 500 else Fore.RED)
+                                    slow_flag    = f" {Fore.YELLOW}⚠ SLOW{Style.RESET_ALL}"    if duration_ms > 3000 else ""
+                                    anomaly_flag = f" {Fore.RED}⚡ ANOMALY — {anomaly}{Style.RESET_ALL}" if anomaly else ""
+
+                                    
+                                    print(f"  {Fore.WHITE}[{i:03}/{len(payloads):03}] "
+                                        f"{Fore.CYAN}{payload_repr:<45} "
+                                        f"{status_color}{status_code}{Style.RESET_ALL} "
+                                        f"{Fore.WHITE}{duration_ms:>7.1f}ms"
+                                        f"{slow_flag}{anomaly_flag}")
 
                                 if anomaly:
                                     findings_in_path += 1
-                                    reason = (f"Dict-Fuzz (Query): '{param_name}'='{payload_str}'. "
-                                            f"Status: {status_code}, Time: {duration_ms:.2f}ms, "
-                                            f"Anomaly: {anomaly}")
+                                    reason   = (f"Dict-Fuzz (Query): '{param_name}'='{payload_str}'. "
+                                                f"Status: {status_code}, Time: {duration_ms:.2f}ms, "
+                                                f"Anomaly: {anomaly}")
                                     severity = self._get_severity(status_code, duration_ms, intel)
                                     reporter.add_finding(method, path, {"payload": payload},
                                                         reason, response_text, severity)
@@ -362,10 +391,7 @@ class Fuzzer():
         """
         FUZZ using dictionaries, given or default
         """
-
         load_wordlist = Utils().load_wordlist
-        # Print MODE
-        print(f"{Fore.WHITE}[•] Running on {Fore.YELLOW}Dictionary{Fore.WHITE} MODE")
 
         # Load default parameters if not specified
         endpoints  = load_wordlist('wordlists/endpoints.txt') if wordlist is None else  load_wordlist(wordlist)
@@ -378,7 +404,7 @@ class Fuzzer():
 
         # Init fuzzing directories
         header =  Header()
-        header.print_header("Endpoint Discovering", "🌐")
+        header.print_header("Endpoint Discovering", "🔥")
 
         discovered_endpoints = set()
         total_checked = 0
@@ -414,9 +440,11 @@ class Fuzzer():
             print(Fore.RED + "  [-] No endpoints found.")
             return
 
-        # Start Fuzzing magic
-        header.print_header("Endpoint Fuzzing", "🌐")
-        self.fuzz_discovered_endpoints(discovered_endpoints, methods, parameters, generator, client,reporter, verbose)
+        fuzz_yes = input(f"\n{Fore.WHITE}Discovering Completed. Do you want to FUZZ discovered endpoints? y/n ")
+        if fuzz_yes == 'y' or fuzz_yes == "Y":
+            # Start Fuzzing magic
+            header.print_header("Endpoint Fuzzing", "🔥")
+            self.fuzz_discovered_endpoints(discovered_endpoints, methods, parameters, generator, client,reporter, verbose)
 
         
 

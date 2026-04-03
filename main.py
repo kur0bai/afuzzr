@@ -86,6 +86,9 @@ def main():
     try:
         print(f"{Fore.WHITE}[•] Stealth Mode {Fore.CYAN}ENABLED{Fore.WHITE}") if stealth else print(f"{Fore.WHITE}[•] Stealth Mode {Fore.YELLOW}DISABLED{Fore.WHITE}")
 
+        print(f"{Fore.WHITE}[•] Target: {Fore.GREEN}{base_url}{Fore.WHITE}")
+
+
         delay = 0.1 if stealth else 0.2
 
         client = FuzzerHttpClient(base_url, delay, stealth)
@@ -96,8 +99,10 @@ def main():
         utils = Utils()
 
         if mode == 'dict':
+            print(f"{Fore.WHITE}[•] Running on {Fore.YELLOW}Dictionary{Fore.WHITE} MODE")
             fuzzer.fuzz_with_dict(base_url, client, generator, reporter, wordlist, verbose, success)
         elif mode == 'spec':
+            print(f"{Fore.WHITE}[•] Running on {Fore.YELLOW}Specifications{Fore.WHITE} MODE")
             if not spec_path:
                 print(f"{Fore.RED}[!] Error: The 'spec' mode requires the argument --spec.")
                 return
