@@ -9,6 +9,7 @@ class APIInspector:
     def __init__(self, client):
         self.client = client
         self.core_fields = Fields()
+        self.methods_to_test = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
 
     def inspect(self, method: str, path: str) -> dict:
         status, headers, body, _ = self.client.send_request(method, path)
@@ -42,10 +43,12 @@ class APIInspector:
         content_type = headers.get("Content-Type", "").lower()
 
         if path.endswith('/') or "list" in path.lower():
+            allowed = self._check_allowed_methods(path)
             vectors.append({
                 "type": "ID_ENUMERATION",
                 "confidence": "MEDIUM",
-                "description": "Endpoint looks like a collection. Suggest fuzzing for numeric or UUID patterns to find valid resources."
+                "description": "Endpoint looks like a collection. Suggest fuzzing for numeric or UUID patterns to find valid resources.",
+                "ALLOWED_METHODS": allowed
             })
 
         # 1. BOLA Vector (ID en Path or Body)
@@ -96,6 +99,50 @@ class APIInspector:
 
         return vectors
 
+    def _check_allowed_methods(self, path: str) -> list:
+        allowed = []
+        for method in self.methods_to_test:
+            status, _, _, _ = self.client.send_request(method, path, {})
+            if status not in [405, 404, 0]: 
+                allowed.append(method)
+        return allowed    
+
+    def _run_bola_module(self, intel):
+        path = intel["path"]
+        print(f"\n{Fore.RED}🔥 [EXPLORING BOLA] Testing: {path}{Style.RESET_ALL}")
+        
+   
+        base_path = re.sub(r'\{.*?\}|:id|<.*?>', '', path).rstrip('/')
+        discovered_ids = self._discover_ids_at_runtime(base_path)
+        
+
+        test_candidates = list(set(discovered_ids + ["0", "1", "me", "self"]))
+        
+        for t_id in test_candidates:
+            fuzz_path = re.sub(r'\{.*?\}|:id|<.*?>', str(t_id), path)
+            status, _, body, _ = self.client_attacker.send_request("GET", fuzz_path, {})
+            
+            if status == 200 and len(body) > 30:
+                print(f"  {Fore.RED}[!] BOLA DETECTED: {fuzz_path} (Accessible)")
+                self.reporter.add_finding("GET", fuzz_path, {"id": t_id}, "BOLA Detected", body, "Critical")
+
+    def _run_mass_assignment_module(self, intel):
+        path = intel["path"]
+        print(f"\n{Fore.MAGENTA}🛠️ [EXPLORING MASS ASSIGNMENT] Testing: {path}{Style.RESET_ALL}")
+        
+
+        fields = intel.get("schema", {}).get("fields", [])
+        critical_fields = ["admin", "role", "permissions", "active", "is_admin"]
+        targets = [f for f in fields if any(c in f.lower() for c in critical_fields)] or ["is_admin", "role"]
+
+        for field in targets:
+            payload = {field: True if "is" in field or "admin" in field else "admin"}
+
+            status, _, body, _ = self.client_attacker.send_request("PATCH", path, payload)
+            if status in [200, 204]:
+                print(f"  {Fore.RED}[!] MASS ASSIGNMENT DETECTED: Field '{field}' accepted via PATCH")
+                self.reporter.add_finding("PATCH", path, payload, "Mass Assignment Success", body, "High")
+    
     def _discover_ids(self, path: str) -> list:
         discovered = []
         seeds = ["1", "1000", "0", "me", "self", "admin"]
@@ -104,7 +151,6 @@ class APIInspector:
             status, _, body, _ = self.client.send_request("GET", test_path)
             if status == 200:
                 discovered.append(seed)
-                # Si el body trae más IDs dentro (ej: una lista de amigos), los extraemos
                 discovered.extend(self._extract_ids_from_response(body))
         
         return list(set(discovered))

@@ -1,6 +1,8 @@
+import json
 import random
 import re
 from colorama import Fore, Style
+from urllib3 import response
 from core.api_intel import APIInspector
 from core.detectors import BOLADetector, MassAssignmentDetector
 from utils.file import Utils
@@ -139,35 +141,6 @@ class Fuzzer():
         print(f"  ├─ Anomaly  : {anomaly}")
         print(f"  └─ Snippet  : {body[:120]!r}{Style.RESET_ALL}\n")
 
-    def fuzz_discovered_endpointse(self, discovered_endpoints, methods, client, reporter, verbose=False):
-        inspector = APIInspector(client)
-
-        #for path in discovered_endpoints:  
-
-        potential_hits = []
-
-        for path in discovered_endpoints:
-            intel = inspector.inspect("GET", path)
-            if intel["vectors"]:
-                print(f"\n{Fore.WHITE}{'═' * 72}{Style.RESET_ALL}")
-                potential_hits.append(intel)
-                print(f"\n{Fore.WHITE}[•] IDENTIFIED: {Fore.YELLOW}{intel['method']} {Fore.CYAN}{intel['path']}")
-                for v in intel["vectors"]:
-                    color = Fore.RED if v["confidence"] == "HIGH" else Fore.MAGENTA
-                    print(f"   └─ {color}[{v['type']}] {Style.RESET_ALL}{v['description']}")
-
-                if not potential_hits:
-                    print(f"\n{Fore.GREEN}No obvious vectors found in the current scope.")
-                    return
-
-
-                print(f"\n{Fore.CYAN}  ┌─ SUMMARY {path}")
-                #print(f"  ├─ Requests sent : {total_requests}")
-                print(f"  └─  Findings      : {len(potential_hits)}{Fore.CYAN}")
-                #print(f"  ├─ Path fuzzed   : {len(fuzz_params['path'])} params")
-                #print(f"  ├─ Body fuzzed   : {len(fuzz_params['body'])} params")
-                #print(f"  └─ Query fuzzed  : {len(fuzz_params['query'])} params{Style.RESET_ALL}") 
-
     def fuzz_discovered_endpoints(self, discovered_endpoints, client, reporter, verbose=False):
         inspector = APIInspector(client)
         potential_hits = []
@@ -181,28 +154,64 @@ class Fuzzer():
             potential_hits.append(intel)
             self._print_target_card(intel) 
 
-            for vector in intel["vectors"]:
-                if vector["confidence"] == "HIGH":
-                    print(f"\n{Fore.RED}  [!] HIGH CONFIDENCE VECTOR DETECTED: {vector['type']}")
-                    
-                    if vector["type"] == "BOLA_PATH":
-                        print(f"{Fore.YELLOW}  [?] Should I attempt BOLA exploitation on {path}?")
-                        if input("  (y/n): ").lower() == 'y':
-                            self._run_bola_module(path, intel, client, reporter)
+            for v in intel["vectors"]:
+                if v["type"] == "BOLA_PATH":
+                    if input(f"  [?] Start BOLA testing on {path}? (y/n): ").lower() == 'y':
+                        self._run_bola_module(intel)
+                
+                elif v["type"] == "MASS_ASSIGNMENT":
+                    if input(f"  [?] Start Mass Assignment on {path}? (y/n): ").lower() == 'y':
+                        self._run_mass_assignment_module(intel)
 
-                    elif vector["type"] == "MASS_ASSIGNMENT":
-                        print(f"{Fore.YELLOW}  [?] Attempt Mass Assignment on discovered fields?")
-                        if input("  (y/n): ").lower() == 'y':
-                            self._run_mass_assignment_module(path, intel, client, reporter)
-
-                    elif vector["type"] == "ID_ENUMERATION":
+                elif v["type"] == "ID_ENUMERATION":
+                        print(f"{Fore.WHITE} Allowed Methods: {Fore.CYAN}{v['ALLOWED_METHODS']}")
                         print(f"{Fore.YELLOW}  [?] Collection detected. Attempt ID Discovery/Fuzzing?")
                         if input("  (y/n): ").lower() == 'y':
                             new_ids = self._discover_ids_at_runtime(path, client)
                             if new_ids: 
-                                print(f"  [+] Found {len(new_ids)} valid IDs. Ready for BOLA testing.")
+                                print(f"  [+] Found {len(new_ids)} valid IDs. Ready for BOLA testing.")        
 
         #self._print_final_summary(potential_hits)
+
+
+    def _fuzz_ids_at_runtime(self, path:str, client, allowed=[]):
+        payloads = [1, 100, 10, "2dw32qwdwdqwdq"]
+        if "POST" in allowed:
+            for payload in payloads:
+                new_path = f"{path}/{payload}"
+                status, _, body, _ = client.send_request("POST", new_path)
+                print(f"RESPONSE ===> {body}")    
+
+    def _discover_ids_at_runtime(self, path: str, client) -> list:
+        found_ids = []
+        print(f"  {Fore.BLUE}🔍 Enumerating collection: {path}")
+
+        status, _, body, _ = client.send_request("GET", path)
+        
+        if status == 200:
+            try:
+                data = json.loads(body)
+                if isinstance(data, list):
+                    for item in data[:10]:
+                        if isinstance(item, dict):
+                            for key in ["id", "uuid", "user_id", "guid", "pk"]:
+                                if key in item:
+                                    found_ids.append(str(item[key]))
+                
+                uuids = re.findall(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', body)
+                found_ids.extend(uuids)
+                
+            except json.JSONDecodeError:
+                pass
+
+        unique_ids = list(set([i for i in found_ids if i]))
+        
+        if unique_ids:
+            print(f"  {Fore.GREEN}  [+] Discovered {len(unique_ids)} IDs: {unique_ids[:3]}...")
+        else:
+            print(f"  {Fore.YELLOW}  [-] No IDs found in collection body.")
+            
+        return unique_ids
 
     def _print_final_summary():
         print(f"\n{Fore.CYAN}  ┌─ SUMMARY {path}")
@@ -212,15 +221,16 @@ class Fuzzer():
         #print(f"  ├─ Body fuzzed   : {len(fuzz_params['body'])} params")
         #print(f"  └─ Query fuzzed  : {len(fuzz_params['query'])} params{Style.RESET_ALL}") 
 
-    def _print_target_card(self, intel):
-        """Muestra una tarjeta visual del target para facilitar el análisis."""
-        print(f"\n{Fore.WHITE}╔═{'═' * 60}╗")
-        print(f"║ {Fore.YELLOW}TARGET:{Style.RESET_ALL} {intel['method']} {intel['path']:<47} ║")
-        #print(f"╠═{'═' * 60}╣")
+    def _print_target_card(self, intel, allowed=[]):
+        print(f"\n{Fore.WHITE} ══{'═' * 60}")
+        print(f"{Fore.YELLOW} TARGET:{Style.RESET_ALL} {intel['method']} {intel['path']:<47} ")
         for v in intel["vectors"]:
             color = Fore.RED if v["confidence"] == "HIGH" else Fore.MAGENTA
-            print(f"║ {color}● {v['type']:<18}{Style.RESET_ALL} | {v['description'][:34]:<34} ║")
-        print(f"╚═{'═' * 60}╝")
+            print(f"{color} ● {v['type']:<18}{Style.RESET_ALL} | {v['description'][:34]:<34} ")
+        print    
+        print(f" ══{'═' * 60}")
+
+
 
     def fuzz_with_spec(self, spec, base_url, client, generator, reporter):
         print(f"{Fore.CYAN}[*] Starting fuzzing by specs...")
@@ -337,9 +347,7 @@ class Fuzzer():
             print(Fore.RED + "  [-] No endpoints found.")
             return
 
-        #fuzz_yes = input(f"\n{Fore.WHITE}Discovering Completed. Do you want to FUZZ discovered endpoints? y/n ")
-        #if fuzz_yes == 'y' or fuzz_yes == "Y":
-            # Start Fuzzing magic
+        # Start Fuzzing magic
         header.print_header("Endpoint Fuzzing", "🔥")
         self.fuzz_discovered_endpoints(discovered_endpoints, client,reporter, verbose)
 

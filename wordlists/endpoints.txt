@@ -15,7 +15,9 @@
 /register
 /profile
 /users
+/users/
 /user
+/user/
 /store
 /inventary
 /stock
